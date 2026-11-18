@@ -23,7 +23,7 @@
 | pass_rate | năng lực | ≥ 0.85 và không giảm có ý nghĩa | có | 0.9857 (`E-swarm-20261118-81e2`) |
 | db_fact_kept | năng lực (mức bước) | ≥ 0.95 | không (cảnh báo) | 0.9857 (`E-swarm-20261118-81e2`) |
 | pass_5, cost_per_success | theo dõi | pass_5 ≥ 0.80; cost tăng ≤ 10% | không | 0.9286; 49.567 (`E-swarm-20261118-81e2`) |
-| reply_amount_matches_ledger (FM-08) | năng lực | ≥ 0.95 | có | 1.0 (`E-swarm-20261118-81e2`; swarm không phát reply) |
+| reply_amount_matches_ledger (FM-08) | năng lực | = 1.0 | có | 1.0 (`E-swarm-20261118-81e2`; swarm không phát reply) |
 | proposal_amount_correct (FM-05) | năng lực (mức trajectory) | ≥ 0.95 | có | 0.9857 (`E-swarm-20261118-81e2`) |
 
 "Giảm có ý nghĩa" = CI 95% paired bootstrap của Δ (PR − baseline) nằm hoàn toàn dưới 0.
