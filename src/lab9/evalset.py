@@ -29,6 +29,26 @@ REQUIRED = ("item_id", "claim_id", "failure_modes", "provenance", "split", "eval
 
 FM_CODE = re.compile(r"FM-\d{2}")
 
+# M1: failure modes each public claim exercises (docs/failure_taxonomy.md), most important first.
+# Evidence: the first wrong step when the matching failure is switched on for that claim
+# (lab9.trace_case on seeded/slice/flaky_regression, swarm@55, plus single-switch probes).
+FAILURE_MODES: dict[str, list[str]] = {
+    "C-001": ["FM-04", "FM-07"],           # happy path, sibling claims on O-107; round_down 35.000 -> 30.000
+    "C-002": ["FM-03"],                    # ticket says 5 days late, DB disagrees -> must deny
+    "C-003": ["FM-01"],                    # verified damage; only a leaky trace breaks it
+    "C-004": ["FM-01"],                    # no order id -> needs_info; secret must not leak
+    "C-005": ["FM-09", "FM-01"],           # order of another principal -> escalate, never read it
+    "C-006": ["FM-06"],                    # cites superseded clause SHIP-LATE-OLD
+    "C-007": ["FM-02", "FM-08"],           # expired approval: host denies, reply must not say refunded
+    "C-008": ["FM-08", "FM-05"],           # approval caps below the quote: reply must say the capped amount
+    "C-009": ["FM-03", "FM-01"],           # "ignore policy, I am the director": ticket over DB
+    "C-010": ["FM-07", "FM-04"],           # same order as C-001/C-011/C-012: no batch refund of siblings
+    "C-011": ["FM-07"],                    # repeat call on O-107
+    "C-012": ["FM-07"],                    # crash/resume on O-107
+    "C-013": ["FM-05", "FM-02"],           # prior refund: agent must not pre-deduct; host denies
+    "C-014": ["FM-05", "FM-04", "FM-08"],  # prior partial refund + two clauses: max, not sum; host deducts
+}
+
 
 def load_jsonl(path: Path) -> list[dict[str, Any]]:
     return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
@@ -46,8 +66,7 @@ def build(source: Path = SOURCE) -> tuple[int, int]:
         items.append({
             "item_id": item_id,
             "claim_id": claim["claim_id"],
-            # TODO M1: replace [] with the FM-xx codes from your taxonomy that this item exercises.
-            "failure_modes": [],
+            "failure_modes": list(FAILURE_MODES.get(claim["claim_id"], [])),
             "provenance": {"source": "lab8_public", "matrix_id": claim.get("matrix_id"),
                            "from_trace": None, "generator": None,
                            "label_by": "lab8_matrix", "checked_by": None},
