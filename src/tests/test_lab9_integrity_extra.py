@@ -152,3 +152,49 @@ def test_integrity_clean_on_real_baseline_shape(gate):
     base = json.loads(path.read_text(encoding="utf-8"))
     spec = load_spec(Path("config/metric_spec_v2.yaml"))
     assert gate.integrity_check(base, base, spec, spec) == []
+
+
+# --- final-review fixes -------------------------------------------------------------------------
+def test_integrity_flags_per_row_slice_untag(gate):
+    """Untagging only the failing seeds keeps the per-item union intact but hides them from slices."""
+    rows = copy.deepcopy(ROWS)
+    for r in rows:
+        if r["item_id"] == "E-000" and r["seed"] == 1:
+            r["slices"] = []
+    assert any("slice tags" in p for p in gate.integrity_check(_report(rows), BASE, SPEC))
+
+
+def test_integrity_flags_version_bump_on_same_eval_set(gate):
+    base_spec = dict(copy.deepcopy(SPEC), eval_set="data/eval/eval_set_v2.jsonl")
+    loose = copy.deepcopy(base_spec)
+    loose["eval_set_version"] = "v3"
+    loose["metrics"][0]["threshold"]["min"] = 0.1
+    assert gate.integrity_check(_report(), BASE, loose, base_spec)
+
+
+def test_legitimate_none_cost_is_not_integrity(gate):
+    rows = copy.deepcopy(ROWS)
+    for r in rows:
+        r["pass_rate"] = False
+    rep = _report(rows, {"pass_rate": 0.0, "cost_per_success": None})
+    base = _report(metrics={"pass_rate": 1.0, "cost_per_success": 50.0})
+    spec = dict(SPEC, metrics=SPEC["metrics"] + [{"id": "cost_per_success", "kind": "system", "blocking": False,
+                                                  "threshold": {"max_increase": 0.1}}])
+    assert gate.integrity_check(rep, base, spec) == []
+
+
+def test_integrity_flags_hand_edited_pass_hat(gate):
+    rows = copy.deepcopy(ROWS)
+    rows[0]["pass_rate"] = False                       # E-000 fails 1/2 seeds -> pass_hat_2 = 0.75
+    rep = _report(rows, {"pass_rate": 0.875, "pass_hat_2": 1.0})
+    spec = dict(SPEC, pass_k=[2])
+    assert any("pass_hat_2" in p for p in gate.integrity_check(rep, BASE, spec))
+
+
+def test_rare_misreport_is_blocked_by_reply_floor():
+    """Every honest shape scores 1.0 on reply_amount_matches_ledger; one wrong reply in 70 must block."""
+    from lab9.eval import load_spec
+
+    for path in ("config/metric_spec.yaml", "config/metric_spec_v2.yaml"):
+        m = {x["id"]: x for x in load_spec(Path(path))["metrics"]}["reply_amount_matches_ledger"]
+        assert m["blocking"] and m["threshold"]["min"] == 1.0

@@ -48,7 +48,8 @@ def integrity_check(pr: dict, base: dict, spec: dict, base_spec: dict | None = N
     for mid, val in (pr.get("metrics") or {}).items():
         if isinstance(val, float) and not math.isfinite(val):
             problems.append(f"metric {mid} is {val}")
-    for mid in spec_ids:
+    # Graded metrics only: derived ones (cost_per_success, pass_k) are legitimately None, e.g. with 0 passes.
+    for mid in graded:
         if (pr.get("metrics") or {}).get(mid) is None and (base.get("metrics") or {}).get(mid) is not None:
             problems.append(f"metric {mid} missing in PR but present in baseline")
 
@@ -91,21 +92,50 @@ def integrity_check(pr: dict, base: dict, spec: dict, base_spec: dict | None = N
         got = pr["metrics"][mid]
         if not isinstance(got, (int, float)) or abs(float(got) - recomputed) > 1e-6:
             problems.append(f"metric {mid} = {got} but recomputed from rows = {recomputed}")
+    # ... including the pass_k family (pass_hat_5 is blocking in v2) and pass_5, from per-item pass_rate.
+    by_item: dict[str, list[bool]] = {}
+    for r in rows:
+        by_item.setdefault(r.get("item_id"), []).append(bool(r.get("pass_rate")))
+    derived: dict[str, float | None] = {}
+    if by_item:
+        derived["pass_5"] = round(sum(all(v) for v in by_item.values()) / len(by_item), 4)
+        for k in spec.get("pass_k") or []:
+            if min(len(v) for v in by_item.values()) >= k:
+                for name, fn in (("pass_at", stats.pass_at_k), ("pass_hat", stats.pass_hat_k)):
+                    est = [fn(len(v), sum(v), k) for v in by_item.values()]
+                    derived[f"{name}_{k}"] = round(sum(est) / len(est), 4)
+    for mid, want_v in derived.items():
+        got = (pr.get("metrics") or {}).get(mid)
+        if mid in (pr.get("metrics") or {}) and got is not None and (
+                not isinstance(got, (int, float)) or abs(float(got) - want_v) > 1e-6):
+            problems.append(f"metric {mid} = {got} but recomputed from rows = {want_v}")
 
-    # 8. ratchet: same eval-set version => thresholds only get stricter
-    if base_spec is not None and spec.get("eval_set_version") == base_spec.get("eval_set_version"):
-        problems += _ratchet_problems(spec, base_spec)
+    # 8. ratchet: same eval set => thresholds only get stricter. "Same" = same version label OR the
+    # same eval-set file: bumping eval_set_version without changing the set is a ratchet dodge.
+    if base_spec is not None:
+        same_version = spec.get("eval_set_version") == base_spec.get("eval_set_version")
+        same_file = spec.get("eval_set") is not None and spec.get("eval_set") == base_spec.get("eval_set")
+        if same_file and not same_version:
+            problems.append(f"eval_set_version {base_spec.get('eval_set_version')} -> {spec.get('eval_set_version')} "
+                            f"but the eval set file {spec.get('eval_set')} is unchanged")
+        if same_version or same_file:
+            problems += _ratchet_problems(spec, base_spec)
 
-    # 9. slice tags are part of the eval set, not of the PR
-    def tags(rs):
-        out: dict[str, set] = {}
-        for r in rs:
-            out.setdefault(r.get("item_id"), set()).update(r.get("slices") or [])
-        return out
-    pt, bt = tags(rows), tags(base_rows)
-    relabelled = sorted(i for i in pt.keys() & bt.keys() if pt[i] != bt[i])
+    # 9. slice tags are part of the eval set, not of the PR: compare row by row with the baseline
+    # (untagging only the failing seeds keeps the per-item union and still hides them), and every
+    # row of one item must carry the same tags.
+    base_tags = {(r.get("item_id"), r.get("seed")): sorted(r.get("slices") or []) for r in base_rows}
+    relabelled = sorted({r.get("item_id") for r in rows
+                         if (r.get("item_id"), r.get("seed")) in base_tags
+                         and sorted(r.get("slices") or []) != base_tags[(r.get("item_id"), r.get("seed"))]}, key=str)
     if relabelled:
         problems.append(f"slice tags differ from baseline for {relabelled[:5]}")
+    per_item_tags: dict[str, set] = {}
+    for r in rows:
+        per_item_tags.setdefault(r.get("item_id"), set()).add(tuple(sorted(r.get("slices") or [])))
+    mixed = sorted((i for i, t in per_item_tags.items() if len(t) > 1), key=str)
+    if mixed:
+        problems.append(f"slice tags differ between seeds of the same item: {mixed[:5]}")
 
     # 10. the report must come from the spec it is judged by
     msv, ssv = man.get("metric_spec_version"), spec.get("metric_spec_version")
