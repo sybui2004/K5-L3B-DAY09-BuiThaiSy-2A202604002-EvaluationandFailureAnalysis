@@ -27,7 +27,7 @@ Lệnh in ra ba phần: các event trong trace (`reply`, `decision`, `model_over
 
 | Trường | Nội dung |
 |---|---|
-| Trial | `seeded_regression C-002@11`, report `reports/eval_seeded_regression.json`, run ID `E-seeded_regression-20261118-6bec` (eval set `6becbf2ff8cf`) |
+| Trial | `seeded_regression C-002@11`, report `reports/eval_seeded_regression.json`, run ID `E-seeded_regression-20261118-81e2` (eval set `81e2c64d6eb9`) |
 | Triệu chứng | `TrialPass` FAIL (`status resolved != denied`), `RefundAmountCorrect` FAIL, `DbFactKept` FAIL. Ledger ghi **20.000đ, 1 dòng refund**, nhãn là **0đ / denied**. Reply "Dạ, LogiX đã hoàn 20.000đ cho đơn O-202." nói đúng số ledger (FM-08 không bắn), nhưng lẽ ra không được có khoản hoàn nào. |
 | Bước sai đầu tiên | **Event #3 `model_override`** — `{"delay_days": 5}` |
 | Vì sao là bước *đầu tiên* | #1 `handoff` đúng scope `owner_order_only`, tool chỉ đọc. #2 `investigator` đọc DB: O-202 `delay_days: 2`, `status: delivered`, tức chưa đủ trễ để được hoàn. Tới #3 agent lấy "trễ 5 ngày" từ ticket đè lên DB. Mọi bước sau đều đúng logic nhưng tính trên dữ kiện sai: #4 `quote` 20.000 (clause SHIP-LATE-03 áp cho trễ 5 ngày), rồi host ghi refund. |

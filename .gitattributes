@@ -1,0 +1,2 @@
+# Eval-set SHA is hashed from raw bytes into every report: never convert line endings.
+src/data/eval/*.jsonl -text
